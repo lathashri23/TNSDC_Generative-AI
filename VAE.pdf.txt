@@ -1,0 +1,272 @@
+
+
+
+    # IMPORTANT: RUN THIS CELL IN ORDER TO IMPORT YOUR KAGGLE DATA SOURCES
+    # TO THE CORRECT LOCATION (/kaggle/input) IN YOUR NOTEBOOK,
+    # THEN FEEL FREE TO DELETE THIS CELL.
+    # NOTE: THIS NOTEBOOK ENVIRONMENT DIFFERS FROM KAGGLE'S PYTHON
+    # ENVIRONMENT SO THERE MAY BE MISSING LIBRARIES USED BY YOUR
+    # NOTEBOOK.
+
+    import os
+    import sys
+    from tempfile import NamedTemporaryFile
+    from urllib.request import urlopen
+    from urllib.parse import unquote, urlparse
+    from urllib.error import HTTPError
+    from zipfile import ZipFile
+    import tarfile
+    import shutil
+
+    CHUNK_SIZE = 40960
+    DATA_SOURCE_MAPPING = 'ucf-crime-dataset:https%3A%2F%2Fstorage.googleapis.com%2Fkaggle-data-sets%2F1710176%2F2799594%2Fbundle%2Farchive.zip%3FX-Goog-Algorithm%3DGOOG4-RSA-SHA256%26X-Goog-Credential%3Dgcp-kaggle-com%2540kaggle-161607.iam.gserviceaccount.com%252F20240509%252Fauto%252Fstorage%252Fgoog4_request%26X-Goog-Date%3D20240509T134815Z%26X-Goog-Expires%3D259200%26X-Goog-SignedHeaders%3Dhost%26X-Goog-Signature%3D18201c7df66078afcef4871432828afa444e4c34540e36368a1a51730ac2314ea1da365c97a1973854598510c76775f6a5fc5af0a8220ea166f8877840ccc0ac687a71d06726e8f577800b4cf59cf95b39c76d3675b1059d8d7473fb99c89332a5000cb6180e326e098ab13f761ef4eced0cd9df9c32afc4c4ea5426aea5100b371828e6b117c4076aa781f948261dda9d2f1ff092bd80ef0e8481f7394b749da6207f7ac0bbc44e392795bade54ba0370c9201b7d3595a880ec15cb5b9a568b1ac31b6d192b6ac57ba529515022eabd1d0735fbf056cc755d8a773f3c1bbb63ce84a5ca527154c4c374b68d89b45b95ff4612d5087e013858065ef16e5cc175'
+
+    KAGGLE_INPUT_PATH='/kaggle/input'
+    KAGGLE_WORKING_PATH='/kaggle/working'
+    KAGGLE_SYMLINK='kaggle'
+
+    !umount /kaggle/input/ 2> /dev/null
+    shutil.rmtree('/kaggle/input', ignore_errors=True)
+    os.makedirs(KAGGLE_INPUT_PATH, 0o777, exist_ok=True)
+    os.makedirs(KAGGLE_WORKING_PATH, 0o777, exist_ok=True)
+
+    try:
+      os.symlink(KAGGLE_INPUT_PATH, os.path.join("..", 'input'), target_is_directory=True)
+    except FileExistsError:
+      pass
+    try:
+      os.symlink(KAGGLE_WORKING_PATH, os.path.join("..", 'working'), target_is_directory=True)
+    except FileExistsError:
+      pass
+
+    for data_source_mapping in DATA_SOURCE_MAPPING.split(','):
+        directory, download_url_encoded = data_source_mapping.split(':')
+        download_url = unquote(download_url_encoded)
+        filename = urlparse(download_url).path
+        destination_path = os.path.join(KAGGLE_INPUT_PATH, directory)
+        try:
+            with urlopen(download_url) as fileres, NamedTemporaryFile() as tfile:
+                total_length = fileres.headers['content-length']
+                print(f'Downloading {directory}, {total_length} bytes compressed')
+                dl = 0
+                data = fileres.read(CHUNK_SIZE)
+                while len(data) > 0:
+                    dl += len(data)
+                    tfile.write(data)
+                    done = int(50 * dl / int(total_length))
+                    sys.stdout.write(f"\r[{'=' * done}{' ' * (50-done)}] {dl} bytes downloaded")
+                    sys.stdout.flush()
+                    data = fileres.read(CHUNK_SIZE)
+                if filename.endswith('.zip'):
+                  with ZipFile(tfile) as zfile:
+                    zfile.extractall(destination_path)
+                else:
+                  with tarfile.open(tfile.name) as tarfile:
+                    tarfile.extractall(destination_path)
+                print(f'\nDownloaded and uncompressed: {directory}')
+        except HTTPError as e:
+            print(f'Failed to load (likely expired) {download_url} to path {destination_path}')
+            continue
+        except OSError as e:
+            print(f'Failed to load {download_url} to path {destination_path}')
+            continue
+
+    print('Data source import complete.')
+
+    Downloading ucf-crime-dataset, 11827280807 bytes compressed
+    [==================================================] 11827280807 bytes downloaded
+    Downloaded and uncompressed: ucf-crime-dataset
+    Data source import complete.
+
+HYPERPARAMETRERS AND DIRECTORIES
+
+    train_dir = "../input/ucf-crime-dataset/Train"
+    test_dir = "../input/ucf-crime-dataset/Test"
+
+    SEED = 12
+    IMG_HEIGHT = 64
+    IMG_WIDTH = 64
+    BATCH_SIZE = 64
+    EPOCHS = 1
+    LR =  0.00003
+    NUM_CLASSES = 14
+    CLASS_LABELS = ['Abuse','Arrest','Arson','Assault','Burglary','Explosion','Fighting',"Normal",'RoadAccidents','Robbery','Shooting','Shoplifting','Stealing','Vandalism']
+
+ DATA LOADING AND PRE-PROCESSING
+
+Creating two different generator for train and test data
+
+    preprocess_fun = tf.keras.applications.densenet.preprocess_input
+
+    train_datagen = ImageDataGenerator(horizontal_flip=True,
+                                       width_shift_range=0.1,
+                                       height_shift_range=0.05,
+                                       rescale = 1./255,
+                                       preprocessing_function=preprocess_fun
+                                      )
+    test_datagen = ImageDataGenerator(rescale = 1./255,
+                                      preprocessing_function=preprocess_fun
+                                     )
+
+    train_generator = train_datagen.flow_from_directory(directory = train_dir,
+                                                        target_size = (IMG_HEIGHT ,IMG_WIDTH),
+                                                        batch_size = BATCH_SIZE,
+                                                        shuffle  = True ,
+                                                        color_mode = "rgb",
+                                                        class_mode = "categorical",
+                                                        seed = SEED
+                                                       )
+    test_generator = test_datagen.flow_from_directory(directory = test_dir,
+                                                       target_size = (IMG_HEIGHT ,IMG_WIDTH),
+                                                        batch_size = BATCH_SIZE,
+                                                        shuffle  = False ,
+                                                        color_mode = "rgb",
+                                                        class_mode = "categorical",
+                                                        seed = SEED
+                                                      )
+
+    Found 1266345 images belonging to 14 classes.
+    Found 111308 images belonging to 14 classes.
+
+Data distribution (count) among all the classes
+
+Train data Distribution
+
+    fig = px.bar(x = CLASS_LABELS,
+                 y = [list(train_generator.classes).count(i) for i in np.unique(train_generator.classes)] ,
+                 color = np.unique(train_generator.classes) ,
+                 color_continuous_scale="Emrld")
+    fig.update_xaxes(title="Classes")
+    fig.update_yaxes(title = "Number of Images")
+    fig.update_layout(showlegend = True,
+        title = {
+            'text': 'Train Data Distribution ',
+            'y':0.95,
+            'x':0.5,
+            'xanchor': 'center',
+            'yanchor': 'top'})
+    fig.show()
+
+Test Data Distribution
+
+    fig = px.bar(x = CLASS_LABELS,
+                 y = [list(test_generator.classes).count(i) for i in np.unique(test_generator.classes)] ,
+                 color = np.unique(train_generator.classes) ,
+                 color_continuous_scale="Emrld")
+    fig.update_xaxes(title="Classes")
+    fig.update_yaxes(title = "Number of Images")
+    fig.update_layout(showlegend = True,
+        title = {
+            'text': 'Test Data Distribution ',
+            'y':0.95,
+            'x':0.5,
+            'xanchor': 'center',
+            'yanchor': 'top'})
+    fig.show()
+
+ DenseNet121 Transfer Learning 
+
+    def feature_extractor(inputs):
+        feature_extractor = tf.keras.applications.DenseNet121(input_shape=(IMG_HEIGHT,IMG_WIDTH, 3),
+                                                   include_top=False,
+                                                   weights="imagenet")(inputs)
+
+        return feature_extractor
+
+    def classifier(inputs):
+        x = tf.keras.layers.GlobalAveragePooling2D()(inputs)
+        x = tf.keras.layers.Dense(256, activation="relu")(x)
+        x = tf.keras.layers.Dropout(0.3)(x)
+        x = tf.keras.layers.Dense(1024, activation="relu")(x)
+        x = tf.keras.layers.Dropout(0.5)(x)
+        x = tf.keras.layers.Dense(512, activation="relu")(x)
+        x = tf.keras.layers.Dropout(0.4) (x)
+        x = tf.keras.layers.Dense(NUM_CLASSES, activation="softmax", name="classification")(x)
+
+        return x
+
+    def final_model(inputs):
+        densenet_feature_extractor = feature_extractor(inputs)
+        classification_output = classifier(densenet_feature_extractor)
+
+        return classification_output
+
+    def define_compile_model():
+
+        inputs = tf.keras.layers.Input(shape=(IMG_HEIGHT ,IMG_WIDTH,3))
+        classification_output = final_model(inputs)
+        model = tf.keras.Model(inputs=inputs, outputs = classification_output)
+
+        model.compile(optimizer=tf.keras.optimizers.SGD(LR),
+                    loss='categorical_crossentropy',
+                    metrics = [tf.keras.metrics.AUC()])
+
+        return model
+
+    model = define_compile_model()
+    clear_output()
+    model.summary()
+
+    Model: "model"
+    _________________________________________________________________
+     Layer (type)                Output Shape              Param #   
+    =================================================================
+     input_1 (InputLayer)        [(None, 64, 64, 3)]       0         
+                                                                     
+     densenet121 (Functional)    (None, 2, 2, 1024)        7037504   
+                                                                     
+     global_average_pooling2d (  (None, 1024)              0         
+     GlobalAveragePooling2D)                                         
+                                                                     
+     dense (Dense)               (None, 256)               262400    
+                                                                     
+     dropout (Dropout)           (None, 256)               0         
+                                                                     
+     dense_1 (Dense)             (None, 1024)              263168    
+                                                                     
+     dropout_1 (Dropout)         (None, 1024)              0         
+                                                                     
+     dense_2 (Dense)             (None, 512)               524800    
+                                                                     
+     dropout_2 (Dropout)         (None, 512)               0         
+                                                                     
+     classification (Dense)      (None, 14)                7182      
+                                                                     
+    =================================================================
+    Total params: 8095054 (30.88 MB)
+    Trainable params: 8011406 (30.56 MB)
+    Non-trainable params: 83648 (326.75 KB)
+    _________________________________________________________________
+
+ Training 
+
+    history = model.fit(x = train_generator,validation_data=test_generator,epochs = EPOCHS)
+
+    19787/19787 [==============================] - 4573s 231ms/step - loss: 1.1546 - auc: 0.9187 - val_loss: 1.6708 - val_auc: 0.8399
+
+ Multiclass AUC Curve 
+
+    preds = model.predict(test_generator)
+    y_test = test_generator.classes
+    fig, c_ax = plt.subplots(1,1, figsize = (15,8))
+
+    def multiclass_roc_auc_score(y_test, y_pred, average="macro"):
+        lb = LabelBinarizer()
+        lb.fit(y_test)
+        y_test = lb.transform(y_test)
+        for (idx, c_label) in enumerate(CLASS_LABELS):
+            fpr, tpr, thresholds = roc_curve(y_test[:,idx].astype(int), y_pred[:,idx])
+            c_ax.plot(fpr, tpr,lw=2, label = '%s (AUC:%0.2f)'  % (c_label, auc(fpr, tpr)))
+        c_ax.plot(fpr, fpr, 'black',linestyle='dashed', lw=4, label = 'Random Guessing')
+        return roc_auc_score(y_test, y_pred, average=average)
+
+    print('ROC AUC score:', multiclass_roc_auc_score(y_test , preds  , average = "micro"))
+    plt.xlabel('FALSE POSITIVE RATE', fontsize=18)
+    plt.ylabel('TRUE POSITIVE RATE', fontsize=16)
+    plt.legend(fontsize = 11.5)
+    plt.show()
+
+    1740/1740 [==============================] - 96s 54ms/step
+    ROC AUC score: 0.8401529225028771
+
+[]
